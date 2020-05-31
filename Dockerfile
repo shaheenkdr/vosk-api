@@ -22,7 +22,7 @@ RUN apt-get update && \
         ffmpeg \
         nano \
         swig \
-        python3-pip
+        python3-pip \
 	vim && \
     rm -rf /var/lib/apt/lists/*
 
