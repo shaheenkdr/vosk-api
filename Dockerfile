@@ -15,6 +15,10 @@ RUN apt-get update && \
         subversion \
         python2.7 \
         python3 \
+	python3-dev \
+        python3-websockets \
+        python3-setuptools \
+	python3-wheel \
         zlib1g-dev \
         ca-certificates \
         gfortran \
