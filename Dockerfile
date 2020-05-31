@@ -39,6 +39,7 @@ RUN git clone --depth 1 https://github.com/kaldi-asr/kaldi.git /opt/kaldi && \
     make -j $(nproc)
     
  RUN git clone --depth 1 https://github.com/shaheenkdr/vosk-api.git /opt/vosk-api && \
+     export KALDI_ROOT=/opt/kaldi && \
      cd /opt/vosk-api/python/ && \
      pip3 install setuptools && \
      python3 setup.py install --user --single-version-externally-managed --root=/
