@@ -22,7 +22,7 @@ distutils.dir_util.copy_tree(
     update=1,
     verbose=1)
 
-kaldi_root = 'opt/kaldi'
+kaldi_root = '/opt/kaldi'
 kaldi_static_libs = ['src/online2/kaldi-online2.a',
              'src/decoder/kaldi-decoder.a',
              'src/ivector/kaldi-ivector.a',
