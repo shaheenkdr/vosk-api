@@ -32,7 +32,7 @@ RUN apt-get update && \
 
 RUN ln -s /usr/bin/python2.7 /usr/bin/python 
 
-RUN git clone --depth 1 https://github.com/kaldi-asr/kaldi.git /opt/kaldi && \
+RUN git clone -b 5.0 --single-branch https://github.com/kaldi-asr/kaldi.git /opt/kaldi && \
     cd /opt/kaldi && \
     cd /opt/kaldi/tools && \
     ./extras/install_mkl.sh && \
