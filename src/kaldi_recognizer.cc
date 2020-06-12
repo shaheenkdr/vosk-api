@@ -45,6 +45,7 @@ KaldiRecognizer::KaldiRecognizer(Model *model, float sample_frequency) : model_(
             feature_pipeline_);
 
     frame_offset_ = 0;
+    round_offset_ = 0;
     input_finalized_ = false;
     spk_feature_ = NULL;
 
@@ -89,6 +90,7 @@ KaldiRecognizer::KaldiRecognizer(Model *model, float sample_frequency, char cons
             feature_pipeline_);
 
     frame_offset_ = 0;
+    round_offset_ = 0;
     input_finalized_ = false;
     spk_feature_ = NULL;
 
@@ -121,6 +123,7 @@ KaldiRecognizer::KaldiRecognizer(Model *model, SpkModel *spk_model, float sample
             feature_pipeline_);
 
     frame_offset_ = 0;
+    round_offset_ = 0;
     input_finalized_ = false;
 
     spk_feature_ = new OnlineMfcc(spk_model_->spkvector_mfcc_opts);
@@ -159,8 +162,30 @@ void KaldiRecognizer::CleanUp()
     delete silence_weighting_;
     silence_weighting_ = new kaldi::OnlineSilenceWeighting(*model_->trans_model_, model_->feature_info_.silence_weighting_config, 3);
 
+    if (spk_feature_) {
+        delete spk_feature_;
+        spk_feature_ = new OnlineMfcc(spk_model_->spkvector_mfcc_opts);
+    }
+
     frame_offset_ += decoder_->NumFramesDecoded();
-    decoder_->InitDecoding(frame_offset_);
+
+    // Each 10 minutes we drop the pipeline to save memory in continuous processing
+    if (frame_offset_ > 20000) {
+        round_offset_ += frame_offset_;
+        frame_offset_ = 0;
+
+        delete decoder_;
+        delete feature_pipeline_;
+
+        feature_pipeline_ = new kaldi::OnlineNnet2FeaturePipeline (model_->feature_info_);
+        decoder_ = new kaldi::SingleUtteranceNnet3Decoder(model_->nnet3_decoding_config_,
+            *model_->trans_model_,
+            *model_->decodable_info_,
+            model_->hclg_fst_ ? *model_->hclg_fst_ : *decode_fst_,
+            feature_pipeline_);
+    } else {
+        decoder_->InitDecoding(frame_offset_);
+    }
 }
 
 void KaldiRecognizer::UpdateSilenceWeights()
@@ -210,9 +235,13 @@ bool KaldiRecognizer::AcceptWaveform(Vector<BaseFloat> &wdata)
         input_finalized_ = false;
     }
 
-    feature_pipeline_->AcceptWaveform(sample_frequency_, wdata);
-    UpdateSilenceWeights();
-    decoder_->AdvanceDecoding();
+    int step = static_cast<int>(sample_frequency_ * 0.2);
+    for (int i = 0; i < wdata.Dim(); i+= step) {
+        SubVector<BaseFloat> r = wdata.Range(i, std::min(step, wdata.Dim() - i));
+        feature_pipeline_->AcceptWaveform(sample_frequency_, r);
+        UpdateSilenceWeights();
+        decoder_->AdvanceDecoding();
+    }
 
     if (spk_feature_) {
         spk_feature_->AcceptWaveform(sample_frequency_, wdata);
@@ -256,11 +285,22 @@ static void RunNnetComputation(const MatrixBase<BaseFloat> &features,
 
 void KaldiRecognizer::GetSpkVector(Vector<BaseFloat> &xvector)
 {
-    int num_frames = spk_feature_->NumFramesReady() - frame_offset_ * 3;
+    vector<int32> nonsilence_frames;
+    if (silence_weighting_->Active() && feature_pipeline_->NumFramesReady() > 0) {
+        silence_weighting_->ComputeCurrentTraceback(decoder_->Decoder(), true);
+        silence_weighting_->GetNonsilenceFrames(feature_pipeline_->NumFramesReady(),
+                                          frame_offset_ * 3,
+                                          &nonsilence_frames);
+    }
+
+    int num_frames = spk_feature_->NumFramesReady();
     Matrix<BaseFloat> mfcc(num_frames, spk_feature_->Dim());
     for (int i = 0; i < num_frames; ++i) {
+       if (std::find(nonsilence_frames.begin(),
+                     nonsilence_frames.end(), i % 3) == nonsilence_frames.end())
+           continue;
        Vector<BaseFloat> feat(spk_feature_->Dim());
-       spk_feature_->GetFrame(i + frame_offset_ * 3, &feat);
+       spk_feature_->GetFrame(i, &feat);
        mfcc.CopyRowFromVec(feat, i);
     }
     SlidingWindowCmnOptions cmvn_opts;
@@ -336,8 +376,8 @@ const char* KaldiRecognizer::Result()
     for (int i = 0; i < size; i++) {
         json::JSON word;
         word["word"] = model_->word_syms_->Find(words[i]);
-        word["start"] = (frame_offset_ + times[i].first) * 0.03;
-        word["end"] = (frame_offset_ + times[i].second) * 0.03;
+        word["start"] = (round_offset_ + frame_offset_ + times[i].first) * 0.03;
+        word["end"] = (round_offset_ + frame_offset_ + times[i].second) * 0.03;
         word["conf"] = conf[i];
         obj["result"].append(word);
 
