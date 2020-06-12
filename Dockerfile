@@ -46,6 +46,7 @@ RUN git clone --depth 1 https://github.com/kaldi-asr/kaldi.git /opt/kaldi && \
      export KALDI_ROOT=/opt/kaldi && \
      cd /opt/vosk-api/python/ && \
      pip3 install setuptools && \
+     pip3 install websockets --upgrade && \
      python3 setup.py install --user --single-version-externally-managed --root=/
 
 WORKDIR /home/
